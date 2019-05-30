@@ -36,11 +36,11 @@ Their arit hmetic properties are governed by the IEEE 754 standard implemented b
 
 在IEEE754中一个浮点数 (Value) 的表示其实可以这样表示：
 
-![expression](https://github.com/GenuineJyn/GenuineJyn.github.io/blob/master/pictures/expression.png)
+![expression](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/expression.png)
 
-![float](https://github.com/GenuineJyn/GenuineJyn.github.io/blob/master/pictures/float.png)
+![float](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/float.png)
 以单精度浮点数float32为例，单精度浮点数使用32个bit来存储，如下图。
-![float32](https://github.com/GenuineJyn/GenuineJyn.github.io/blob/master/pictures/float32.png)
+![float32](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/float32.png)
 
 * S: 符号位， 0正1负
 * 阶码：8位，以2为底的指数，阶码 = 阶码真值 + 127   //127的计算可以查看IEEE754  127 = 2^(8-1)-1
@@ -63,8 +63,8 @@ A float32 provides approximately six decimal digits of precision, whereas a floa
 ```
  
 顺便可以理解【标注点1】的代码了，看一下最后浮点数二进制表示就一目了然了，借助[工具](https://www.h-schmidt.net/FloatConverter/IEEE754.html)看一下。
-![float1](https://github.com/GenuineJyn/GenuineJyn.github.io/blob/master/pictures/float1.png)
-![float2](https://github.com/GenuineJyn/GenuineJyn.github.io/blob/master/pictures/float2.png)
+![float1](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/float1.png)
+![float2](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/float2.png)
 如果看尾数的第24位：16777216为0， 16777217为1，因此存不下丢掉了(精度损失，也被称为“四舍五入”)。
 
 # 3.窥探json相关实现代码
