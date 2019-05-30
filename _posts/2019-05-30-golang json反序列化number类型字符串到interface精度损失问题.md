@@ -3,7 +3,7 @@
 ## 1.json.Unmarshal操作number字符串可能导致精度损失问题
 在[json规范](http://json.org)中对数字类型处理并没有区分整型和浮点型：
 "A value can be a string in double quotes, or a number, or true or false or null, or an object or an array. These structures can be nested."
-![json](https://github.com/GenuineJyn/genuinejyn.github.io/blob/master/pictures/json.png)
+![json](https://github.com/GenuineJyn/GenuineJyn.github.io/tree/master/pictures/json.png)
 
 如果反序列化的时候指定明确的结构体和变量类型，反序列化不存在问题，但当把json解析成一个interface{}值的时候，golang标准库json把数字类型的统一反序列化成float64。
 
@@ -36,11 +36,11 @@ Their arit hmetic properties are governed by the IEEE 754 standard implemented b
 
 在IEEE754中一个浮点数 (Value) 的表示其实可以这样表示：
 
-![expression](https://github.com/GenuineJyn/genuinejyn.github.io/blob/master/pictures/expression.png)
+![expression](https://github.com/GenuineJyn/GenuineJyn.github.io/tree/master/pictures/expression.png)
 
-![float](https://github.com/GenuineJyn/genuinejyn.github.io/blob/master/pictures/float.png)
+![float](https://github.com/GenuineJyn/GenuineJyn.github.io/tree/master/pictures/float.png)
 以单精度浮点数float32为例，单精度浮点数使用32个bit来存储，如下图。
-![float32](https://github.com/GenuineJyn/genuinejyn.github.io/blob/master/pictures/float32.png)
+![float32](https://github.com/GenuineJyn/GenuineJyn.github.io/tree/master/pictures/float32.png)
 
 * S: 符号位， 0正1负
 * 阶码：8位，以2为底的指数，阶码 = 阶码真值 + 127   //127的计算可以查看IEEE754  127 = 2^(8-1)-1
@@ -63,8 +63,8 @@ A float32 provides approximately six decimal digits of precision, whereas a floa
 ```
  
 顺便可以理解【标注点1】的代码了，看一下最后浮点数二进制表示就一目了然了，借助[工具](https://www.h-schmidt.net/FloatConverter/IEEE754.html)看一下。
-![float1](https://github.com/GenuineJyn/genuinejyn.github.io/blob/master/pictures/float1.png)
-![float2](https://github.com/GenuineJyn/genuinejyn.github.io/blob/master/pictures/float2.png)
+![float1](https://github.com/GenuineJyn/GenuineJyn.github.io/tree/master/pictures/float1.png)
+![float2](https://github.com/GenuineJyn/GenuineJyn.github.io/tree/master/pictures/float2.png)
 如果看尾数的第24位：16777216为0， 16777217为1，因此存不下丢掉了(精度损失，也被称为“四舍五入”)。
 
 # 3.窥探json相关实现代码
