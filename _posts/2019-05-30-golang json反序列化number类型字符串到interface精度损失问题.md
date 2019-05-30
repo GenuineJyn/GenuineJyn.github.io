@@ -3,7 +3,7 @@
 ## 1.json.Unmarshal操作number字符串可能导致精度损失问题
 在[json规范](http://json.org)中对数字类型处理并没有区分整型和浮点型：
 "A value can be a string in double quotes, or a number, or true or false or null, or an object or an array. These structures can be nested."
-![json](https://github.com/GenuineJyn/GenuineJyn.github.io/blob/master/pictures/json.png)
+![json](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/json.png)
 
 如果反序列化的时候指定明确的结构体和变量类型，反序列化不存在问题，但当把json解析成一个interface{}值的时候，golang标准库json把数字类型的统一反序列化成float64。
 
