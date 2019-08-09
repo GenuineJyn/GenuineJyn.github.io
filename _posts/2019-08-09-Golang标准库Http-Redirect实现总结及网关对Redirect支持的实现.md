@@ -416,12 +416,12 @@ Client如何禁止Redirect呢？其实实现自己的CheckRedirect即可实现�
 #### 迭代方式
 
 后端服务发送回Redirect给网关的Http ReverseProxy，希望反向代理继续向后端服务发送请求，例如：后端服务是follower-leader的情况，某些情况到达follower的请求需要redirect到leader；
-![RedirectIterator](https://github.com/GenuineJyn/GenuineJyn.github.io/blob/master/pictures/reverse_iterator.png)
+![RedirectIterator](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/reverse_iterator.png)
 需要特别注意：需要支持多次Redirect迭代遍历，借鉴上面讲述的http.Client的checkRedirect；
 
 #### 旁路方式
 后端服务发送回Redirect，希望绕过http ReverseProxy，由调用方完成Redirect，例如：静态资源的访问，后端服务返回了静态资源的位置，由调用方再去拉取资源；
-![RedirectBypass](https://github.com/GenuineJyn/GenuineJyn.github.io/blob/master/pictures/reverse_bypass.png)
+![RedirectBypass](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/reverse_bypass.png)
 
 ### 3.2 特殊实现点简介
 网关http ReverseProxy支持了上述两种方式，后端服务返回通过`c.Writer.Header().Set("X-ReverseProxy-Redirect", "True")`来指定使用网关进行迭代Redirect，默认是旁路方式，旁落方式比较简单，这里不过多介绍，迭代方式实现借鉴了http.Client实现内容，简单介绍一下迭代方式实现的2个特殊考虑点。
