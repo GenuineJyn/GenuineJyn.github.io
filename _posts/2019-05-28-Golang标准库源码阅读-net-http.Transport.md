@@ -172,7 +172,7 @@ pconn.idleTimer = time.AfterFunc(t.IdleConnTimeout, pconn.closeConnIfStillIdle)
 
 整个获取链接的过程大致如下图所示。
 
-![getConn](https://github.com/GenuineJyn/genuinejyn.github.io/blob/master/pictures/getConn.png)
+![getConn](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/getConn.png)
 
 
 ## 2 完成发送和接收通信过程 
@@ -364,7 +364,7 @@ resp.Body.Close()与是否re-use连接没有什么直接联系，欢迎argue，m
 
 ### 2.2 roundTrip总结
 
-![roundTrip总结](https://github.com/GenuineJyn/genuinejyn.github.io/blob/master/pictures/roundtrip.png)
+![roundTrip总结](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/roundtrip.png)
 
 
 

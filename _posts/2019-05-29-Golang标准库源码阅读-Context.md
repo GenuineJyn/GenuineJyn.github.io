@@ -146,7 +146,7 @@ type valueCtx struct {
 总结一下：
 cancelCtx,timerCtx,valueCtx关系图如下：
 
-![context](https://github.com/GenuineJyn/genuinejyn.github.io/blob/master/pictures/context.png)
+![context](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/context.png)
 
 cancelCtx组合了Context，用于指向父类，valueCtx组合了Context， timerCtx组合了cancelCtx，三者本质上都是Context，虽然自身只实现了部分Context接口的部分方法，cancelCtx和timerCtx实现了canceler。
 
@@ -329,7 +329,7 @@ ctx8 canceled
 ctx7 canceled
 ```
 举例大致维系了树的关系图如下，ctx3超时后cancel会把子树中的ctx8也cancel掉，ctx7等会往父类回溯。
-![context_example](https://github.com/GenuineJyn/genuinejyn.github.io/blob/master/pictures/context_example.png)
+![context_example](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/context_example.png)
 
 
 # 2.如何正确的使用Context
