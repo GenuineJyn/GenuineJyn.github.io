@@ -5,8 +5,8 @@
 在网关实践过程遇到了Redirect的需求，网关实现的http反向代理跟标准库net/http/httputil/reverseproxy.go类似, 都没有支持Redirect，从后端返回http status 3xxx意味着调用者需要采取进一步的操作，反向代理作为调用者应该具备Redirect的逻辑，Go的标准库中的http.Client也做了支持，Go1.8区别于之前的版本实现，到现在的go1.12的实现是一致的，本文的主要内容：。
 
 
-> * 1. **本文对Go1.12 http.Client/Server Redirect实现的源码进行简单的梳理说明；**
-> * 2. **介绍网关的http反向代理对Redirect支持考虑；**
+> * **本文对Go1.12 http.Client/Server Redirect实现的源码进行简单的梳理说明；**
+> * **介绍网关的http反向代理对Redirect支持考虑；**
 
 
 3xx状态码具体含义参考这里：【[HTTP状态码#3xx重定向](https://zh.wikipedia.org/wiki/HTTP%E7%8A%B6%E6%80%81%E7%A0%81#3xx)】
