@@ -802,6 +802,358 @@ WriteIndex最后Blocks后面追加Index数据。
 
 这样TSM文件就写完了。
 
-从源码中可以学到很多东西，channel和迭代器的巧妙使用。
+#### 2.3.6 directIndex/indirectIndex
+
+> 本节把directIndex/indirectIndex内容详细描述一下
+
+在写Block的过程伴随着索引的构建不断积累，写完Block后才开始写Index，实际类型是：`directIndex`, 存储布局如下所示，具体来看一下最后如何落盘的。
+
+```
++-----------------------------------------------------------------------------+
+│                                   Index                                     │
++-----------------------------------------------------------------------------+
+│ Key Len │   Key   │ Type │ Count │Min Time │Max Time │ Offset │  Size  │ ...│
+│ 2 bytes │ N bytes │1 byte│2 bytes│ 8 bytes │ 8 bytes │8 bytes │4 bytes │    │
++-----------------------------------------------------------------------------+
+```
+
+在WriteBlock的时候，不断记录Index的相关内容。
+
+```
+// file: tsdb/engine/tsm1/writer.go
+685     // Record this block in index
+686     t.index.Add(key, blockType, minTime, maxTime, t.n, uint32(n))
+```
+先看一下directIndex定义及相关数据结构。
+
+```
+// file: tsdb/engine/tsm1/writer.go
+254 // directIndex is a simple in-memory index implementation for a TSM file.  The full index
+255 // must fit in memory.
+256 type directIndex struct {
+257     keyCount int              // 记录key的数量
+258     size     uint32           // 记录当前累计的索引大小，不包含type
+259
+260     // The bytes written count of when we last fsync'd
+261     lastSync uint32
+262     fd       *os.File         // DiskIndex        	
+263     buf      *bytes.Buffer    // MemoryIndex
+264
+265     f syncer                  // 指向要写入的tsmfile，每写入25MB会执行Sync()一次
+266
+267     w *bufio.Writer           // wrap fd or buffer 的 Writer
+268
+269     key          []byte       // 每次缓存一个key的内容，新的key来了则会把上一个key的flush到内存或者disk
+270     indexEntries *indexEntries // 当前key的索引数据
+271 }
+
+// file: tsdb/engine/tsm1/reader.go
+1561 type indexEntries struct {
+1562     Type    byte
+1563     entries []IndexEntry
+1564 }
+
+// file: tsdb/engine/tsm1/writer.go
+178 // IndexEntry is the index information for a given block in a TSM file.
+179 type IndexEntry struct {
+180     // The min and max time of all points stored in the block.
+181     MinTime, MaxTime int64
+182
+183     // The absolute position in the file where this block is located.
+184     Offset int64
+185
+186     // The size in bytes of the block in the file.
+187     Size uint32
+188 }
+```
+
+把索引的内容写到indexEntries中，知道新key到来，把数据flush内存或者disk，记录key的个数和数据size。
+```
+273 func (d *directIndex) Add(key []byte, blockType byte, minTime, maxTime int64, offset int64, size uint    32) {
+274     // Is this the first block being added?
+275     if len(d.key) == 0 {
+276         // size of the key stored in the index
+277         d.size += uint32(2 + len(key))
+278         // size of the count of entries stored in the index
+279         d.size += indexCountSize
+280
+281         d.key = key
+282         if d.indexEntries == nil {
+283             d.indexEntries = &indexEntries{}
+284         }
+285         d.indexEntries.Type = blockType
+286         d.indexEntries.entries = append(d.indexEntries.entries, IndexEntry{
+287             MinTime: minTime,
+288             MaxTime: maxTime,
+289             Offset:  offset,
+290             Size:    size,
+291         })
+292
+293         // size of the encoded index entry
+294         d.size += indexEntrySize
+295         d.keyCount++
+296         return
+297     }
+298
+299     // See if were still adding to the same series key.
+300     cmp := bytes.Compare(d.key, key)
+301     if cmp == 0 {
+302         // The last block is still this key
+303         d.indexEntries.entries = append(d.indexEntries.entries, IndexEntry{
+304             MinTime: minTime,
+305             MaxTime: maxTime,
+306             Offset:  offset,
+307             Size:    size,
+308         })
+309
+310         // size of the encoded index entry
+311         d.size += indexEntrySize
+312
+313     } else if cmp < 0 {
+314         d.flush(d.w)
+315         // We have a new key that is greater than the last one so we need to add
+316         // a new index block section.
+317
+318         // size of the key stored in the index
+319         d.size += uint32(2 + len(key))
+320         // size of the count of entries stored in the index
+321         d.size += indexCountSize
+322
+323         d.key = key
+324         d.indexEntries.Type = blockType
+325         d.indexEntries.entries = append(d.indexEntries.entries, IndexEntry{
+326             MinTime: minTime,
+327             MaxTime: maxTime,
+328             Offset:  offset,
+329             Size:    size,
+330         })
+331
+332         // size of the encoded index entry
+333         d.size += indexEntrySize
+334         d.keyCount++
+335     } else {
+336         // Keys can't be added out of order.
+337         panic(fmt.Sprintf("keys must be added in sorted order: %s < %s", string(key), string(d.key)))
+338     }
+339 }
+```
+flush刷新当前key的相关索引到内存或者disk，创建的内存原始大小是1M，超出由bytes.NewBuffer保证。
+
+```
+// file: tsdb/engine/tsm1/writer.go
+706 // WriteIndex writes the index section of the file.  If there are no index entries to write,
+707 // this returns ErrNoValues.
+708 func (t *tsmWriter) WriteIndex() error {
+709     indexPos := t.n
+710
+711     if t.index.KeyCount() == 0 {
+712         return ErrNoValues
+713     }
+714
+715     // Set the destination file on the index so we can periodically
+716     // fsync while writing the index.
+717     if f, ok := t.wrapped.(syncer); ok {
+718         t.index.(*directIndex).f = f
+719     }
+720
+721     // Write the index
+722     if _, err := t.index.WriteTo(t.w); err != nil {
+723         return err
+724     }
+725
+726     var buf [8]byte
+727     binary.BigEndian.PutUint64(buf[:], uint64(indexPos))
+728
+729     // Write the index index position
+730     _, err := t.w.Write(buf[:])
+731     return err
+732 }
+
+413 func (d *directIndex) WriteTo(w io.Writer) (int64, error) {
+414     if _, err := d.flush(d.w); err != nil {
+415         return 0, err
+416     }
+417
+418     if err := d.w.Flush(); err != nil {
+419         return 0, err
+420     }
+421
+422     if d.fd == nil {
+423         return copyBuffer(d.f, w, d.buf, nil)
+424     }
+425
+426     if _, err := d.fd.Seek(0, io.SeekStart); err != nil {
+427         return 0, err
+428     }
+429
+430     return io.Copy(w, bufio.NewReaderSize(d.fd, 1024*1024))
+431 }
+```
+只有Block写完了才能写index，因此最后把缓存在内存或者硬盘上的索引数据追加到TSM的Blocks后面，每25MB Sync()一次，到此index数据落盘完成。
+
+最后TSM File落盘完了，要更新到FileStore供后续的查询使用，在这个过程中会创建indirectIndex用于提高查询效率，入口代码如下。
+
+```
+// file: tsdb/engine/tsm1/engine.go
+1887     if err := e.FileStore.Replace(nil, newFiles); err != nil {
+// file: tsdb/engine/tsm1/file_store.go
+ 763         tsm, err := NewTSMReader(fd, WithMadviseWillNeed(f.tsmMMAPWillNeed))
+
+ 233     t.accessor = &mmapAccessor{
+ 234         f:            f,
+ 235         mmapWillNeed: t.madviseWillNeed,
+ 236     }
+ 237
+ 238     index, err := t.accessor.init()
+ 239     if err != nil {
+ 240         return nil, err
+ 241     }
+ 242
+ 243     t.index = index
+```
+接下来从`t.accessor.init()`看一下indirectIndex如何构建的, 主要代码如下。
+
+```
+1315 func (m *mmapAccessor) init() (*indirectIndex, error) {
+......
+         //读Footer，找到索引开始的位置
+1351     indexOfsPos := len(m.b) - 8
+1352     indexStart := binary.BigEndian.Uint64(m.b[indexOfsPos : indexOfsPos+8])
+1353     if indexStart >= uint64(indexOfsPos) {
+1354         return nil, fmt.Errorf("mmapAccessor: invalid indexStart")
+1355     }
+1356
+1357     m.index = NewIndirectIndex()
+         // 构造IndirectIndex
+1358     if err := m.index.UnmarshalBinary(m.b[indexStart:indexOfsPos]); err != nil {
+1359         return nil, err
+1360     }
+1361
+1362     // Allow resources to be freed immediately if requested
+1363     m.incAccess()
+1364     atomic.StoreUint64(&m.freeCount, 1)
+1365
+1366     return m.index, nil
+}
+```
+
+```
+tsdb/engine/tsm1/reader.go
+ 687 // indirectIndex is a TSMIndex that uses a raw byte slice representation of an index.  This
+ 688 // implementation can be used for indexes that may be MMAPed into memory.
+ 689 type indirectIndex struct {
+ 724     // b is the underlying index byte slice.  This could be a copy on the heap or an MMAP
+ 725     // slice reference
+ 726     b []byte    // 指向index的开始位置，通过与偏移量的配合取数据
+ 727
+ 728     // offsets contains the positions in b for each key.  It points to the 2 byte length of
+ 729     // key.
+ 730     offsets []byte
+ 731
+ 732     // minKey, maxKey are the minium and maximum (lexicographically sorted) contained in the
+ 733     // file
+ 734     minKey, maxKey []byte
+ 735
+ 736     // minTime, maxTime are the minimum and maximum times contained in the file across all
+ 737     // series.
+ 738     minTime, maxTime int64
+ 739
+ 740     // tombstones contains only the tombstoned keys with subset of time values deleted.  An
+ 741     // entry would exist here if a subset of the points for a key were deleted and the file
+ 742     // had not be re-compacted to remove the points on disk.
+ 743     tombstones map[string][]TimeRange
+ 744 }
+ 
+ 
+ 
+1198 // UnmarshalBinary populates an index from an encoded byte slice
+1199 // representation of an index.
+1200 func (d *indirectIndex) UnmarshalBinary(b []byte) error {
+1201     d.mu.Lock()
+1202     defer d.mu.Unlock()
+1203
+1204     // Keep a reference to the actual index bytes
+1205     d.b = b
+......
+1213     // To create our "indirect" index, we need to find the location of all the keys in
+1214     // the raw byte slice.  The keys are listed once each (in sorted order).  Following
+1215     // each key is a time ordered list of index entry blocks for that key.  The loop below
+1216     // basically skips across the slice keeping track of the counter when we are at a key
+1217     // field.
+1218     var i int32
+1219     var offsets []int32
+1220     iMax := int32(len(b))
+1221     for i < iMax {
+             // 添加一个offset
+1222         offsets = append(offsets, i)
+1223
+1224         // Skip to the start of the values
+1225         // key length value (2) + type (1) + length of key
+1226         if i+2 >= iMax {
+1227             return fmt.Errorf("indirectIndex: not enough data for key length value")
+1228         }
+1229         i += 3 + int32(binary.BigEndian.Uint16(b[i:i+2]))
+1230
+1231         // count of index entries
+1232         if i+indexCountSize >= iMax {
+1233             return fmt.Errorf("indirectIndex: not enough data for index entries count")
+1234         }
+1235         count := int32(binary.BigEndian.Uint16(b[i : i+indexCountSize]))
+1236         i += indexCountSize
+1237
+1238         // Find the min time for the block   找到当前block的MinTime
+1239         if i+8 >= iMax {
+1240             return fmt.Errorf("indirectIndex: not enough data for min time")
+1241         }
+1242         minT := int64(binary.BigEndian.Uint64(b[i : i+8]))
+1243         if minT < minTime {
+1244             minTime = minT
+1245         }
+1246
+1247         i += (count - 1) * indexEntrySize
+1248
+1249         // Find the max time for the block   找到当前Block的MaxTime
+1250         if i+16 >= iMax {
+1251             return fmt.Errorf("indirectIndex: not enough data for max time")
+1252         }
+1253         maxT := int64(binary.BigEndian.Uint64(b[i+8 : i+16]))
+1254         if maxT > maxTime {
+1255             maxTime = maxT
+1256         }
+1257
+1258         i += indexEntrySize
+1259     }
+1260
+1261     firstOfs := offsets[0]
+1262     _, key := readKey(b[firstOfs:]) 
+1263     d.minKey = key
+1264
+1265     lastOfs := offsets[len(offsets)-1]
+1266     _, key = readKey(b[lastOfs:])
+1267     d.maxKey = key
+1268
+1269     d.minTime = minTime
+1270     d.maxTime = maxTime
+1271
+1272     var err error   
+         // mmap 申请内存放所有的offsets
+1273     d.offsets, err = mmap(nil, 0, len(offsets)*4)
+1274     if err != nil {
+1275         return err
+1276     }
+1277     for i, v := range offsets {
+1278         binary.BigEndian.PutUint32(d.offsets[i*4:i*4+4], uint32(v))
+1279     }
+1280
+1281     return nil
+1282 }
+```
+
+总结一下整个索引数据相关内容如下图。
+
+![](https://raw.githubusercontent.com/GenuineJyn/GenuineJyn.github.io/master/pictures/influxdb/influxdb_index.png)
+
+到此Cache所有内容详细的过了一遍了，从源码中可以学到很多东西，channel和迭代器的巧妙使用。
+
 
 
